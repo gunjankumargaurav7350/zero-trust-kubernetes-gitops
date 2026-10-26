@@ -1,0 +1,33 @@
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "payment-service-l7-strict-policy"
+  namespace: "payments"
+spec:
+  description: "Enforces Layer 7 HTTP path and method restrictions on payment service API"
+  endpointSelector:
+    matchLabels:
+      app: payment-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: frontend-gateway
+      toPorts:
+        - ports:
+            - port: "8443"
+              protocol: TCP
+          rules:
+            http:
+              - method: "POST"
+                path: "/v1/charges"
+              - method: "GET"
+                path: "/healthz"
+  egress:
+    - toServices:
+        - k8sService:
+            serviceName: payment-db
+            namespace: payments
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
