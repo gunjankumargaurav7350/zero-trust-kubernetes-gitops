@@ -1,30 +1,7 @@
-terraform {
-  required_version = ">= 1.5.0"
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "~> 3.90.0"
-    }
-  }
-}
-
-provider "azurerm" {
-  features {}
-}
-
-resource "azurerm_resource_group" "aks_rg" {
-  name     = var.resource_group_name
-  location = var.location
-  tags     = var.tags
-}
-
-# -------------------------------------------------------------------------------------------------
-# Zero-Trust Production AKS Cluster with Cilium eBPF Data Plane & Workload Identity
-# -------------------------------------------------------------------------------------------------
-resource "azurerm_kubernetes_cluster" "zero_trust_aks" {
+resource "azurerm_kubernetes_cluster" "aks" {
   name                              = var.cluster_name
-  location                          = azurerm_resource_group.aks_rg.location
-  resource_group_name               = azurerm_resource_group.aks_rg.name
+  location                          = var.location
+  resource_group_name               = var.resource_group_name
   dns_prefix                        = var.dns_prefix
   kubernetes_version                = var.kubernetes_version
   private_cluster_enabled           = var.private_cluster_enabled
@@ -57,21 +34,35 @@ resource "azurerm_kubernetes_cluster" "zero_trust_aks" {
     type = "SystemAssigned"
   }
 
-  # Azure CNI Overlay powered by Cilium eBPF for Zero-Trust L7 Network Security
   network_profile {
     network_plugin      = "azure"
     network_plugin_mode = "overlay"
     network_policy      = "cilium"
-    network_data_plane  = "cilium"
+    ebpf_data_plane     = "cilium"
     load_balancer_sku   = "standard"
-    outbound_type       = "userDefinedRouting" # All egress routed via central Azure Firewall
+    outbound_type       = "userDefinedRouting"
   }
 
-  # Secret Store CSI Driver: Mount Key Vault secrets directly into RAM (zero secrets in etcd)
   key_vault_secrets_provider {
     secret_rotation_enabled  = true
     secret_rotation_interval = "2m"
   }
 
   tags = var.tags
+}
+
+resource "azurerm_kubernetes_cluster_node_pool" "additional" {
+  for_each              = var.additional_node_pools
+  name                  = each.key
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.aks.id
+  vm_size               = each.value.vm_size
+  node_count            = each.value.node_count
+  enable_auto_scaling   = each.value.enable_auto_scaling
+  min_count             = each.value.min_count
+  max_count             = each.value.max_count
+  os_disk_type          = each.value.os_disk_type
+  os_disk_size_gb       = each.value.os_disk_size_gb
+  vnet_subnet_id        = each.value.vnet_subnet_id
+  node_labels           = each.value.node_labels
+  tags                  = merge(var.tags, each.value.tags)
 }
