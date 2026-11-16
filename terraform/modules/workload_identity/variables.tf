@@ -22,3 +22,4 @@ variable "identities" {
   description = "Map of user-assigned workload identities configured with for_each"
   default     = {}
 }
+

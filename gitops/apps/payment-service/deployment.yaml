@@ -23,19 +23,34 @@ spec:
         fsGroup: 10001
       containers:
         - name: payment-api
-          image: mcr.microsoft.com/oss/nginx/nginx:1.25.3
+          image: ghcr.io/gunjankumargaurav7350/payment-service:v1.0.0
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
           securityContext:
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: 1000m
-              memory: 1Gi
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: secrets-store-inline
               mountPath: "/mnt/secrets-store"

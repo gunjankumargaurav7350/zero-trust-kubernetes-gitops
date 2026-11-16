@@ -1,25 +1,6 @@
-# 🛡️ Zero-Trust Kubernetes GitOps: Enterprise Production Platform
+# Zero-Trust Kubernetes GitOps
 
-<div align="center">
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30+-326CE5.svg?logo=kubernetes)](https://kubernetes.io/)
-[![Cilium](https://img.shields.io/badge/Network-Cilium_eBPF-F38020.svg?logo=cilium)](https://cilium.io/)
-[![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-EF7B4D.svg?logo=argo)](https://argoproj.github.io/cd/)
-[![Kyverno](https://img.shields.io/badge/Governance-Kyverno_PSS-008080.svg)](https://kyverno.io/)
-[![Azure AKS](https://img.shields.io/badge/Platform-Azure_AKS-0078D4.svg?logo=microsoftazure)](https://azure.microsoft.com)
-
-**Enterprise AKS Engine • Cilium eBPF L7 Network Policies • Kyverno Restricted Admission Control • Entra ID Workload Identity • ArgoCD Declarative App-of-Apps**
-
-[Architecture](#-architecture) • [Security Controls](#-zero-trust-security-pillars) • [GitOps Engine](#-gitops-declarative-workflow) • [Deployment](#-deployment-guide)
-
-</div>
-
----
-
-## 🎯 Architectural Overview
-
-Modern containerized platforms face sophisticated internal lateral movement risks and supply chain threats. **Zero-Trust Kubernetes GitOps** implements a strict **"Never Trust, Always Verify"** security model on **Microsoft Azure Kubernetes Service (AKS)**, architected and automated by **Gunjan Kumar Gaurav**.
+An enterprise-grade production Kubernetes platform implementing the Zero-Trust security model on Azure Kubernetes Service (AKS).
 
 ```
 [ Git Repository: Declarative State ]
@@ -45,81 +26,91 @@ Modern containerized platforms face sophisticated internal lateral movement risk
 • Secret Store CSI Driver (Mounts directly from Azure Key Vault to RAM)
 ```
 
----
+## Security Architecture
 
-## 🔐 Zero-Trust Security Pillars
+- **eBPF Micro-Segmentation (Cilium):** Default-deny cluster-wide policy with Layer 7 HTTP filtering.
+- **Entra ID Workload Identity:** Passwordless pod authentication via short-lived OIDC tokens.
+- **Key Vault CSI Driver:** Mounts secrets directly into container memory (zero secrets in `etcd`).
+- **Kyverno Guardrails:** Enforces `runAsNonRoot: true`, read-only root filesystems, and drops all Linux capabilities.
+- **GitOps Delivery:** ArgoCD App-of-Apps pattern with automated drift detection and self-healing.
 
-### 1. eBPF-Powered Micro-Segmentation (Cilium)
-* **Default-Deny Clusterwide Policy:** All Pod-to-Pod and Pod-to-Internet communication is blocked by default.
-* **Layer 7 HTTP Filtering:** Microservices communicate using explicit HTTP method and endpoint whitelisting (`POST /v1/charges` permitted; all administrative endpoints rejected).
-* **DNS Egress Restriction:** Egress traffic is restricted exclusively to Kubernetes CoreDNS port 53.
-
-### 2. Passwordless Entra ID Workload Identity
-* **Elimination of Static Service Principal Secrets:** Pods exchange short-lived Kubernetes service account tokens with Microsoft Entra ID via OIDC federation.
-* **Azure Key Vault Secret Store CSI:** Secrets are mounted as in-memory tmpfs files directly from Azure Key Vault, preventing secret exposure in `etcd` or persistent storage.
-
-### 3. Kyverno Pod Security Standards (Restricted)
-* `runAsNonRoot: true` strictly enforced.
-* Read-only root filesystems enforced (`readOnlyRootFilesystem: true`).
-* Linux kernel capabilities stripped (`capabilities.drop: ["ALL"]`).
-
-### 4. GitOps Declarative Delivery via ArgoCD
-* Infrastructure and application state maintained in Git as the Single Source of Truth.
-* Automated drift detection and immediate self-healing to prevent configuration tampering.
-
----
-
-## 📁 Repository Structure
+## Repository Layout
 
 ```
 zero-trust-kubernetes-gitops/
 ├── .github/workflows/
-│   └── gitops-validation.yml             # Manifest syntax & Kyverno policy CI check
+│   ├── gitops-validation.yml             # Manifest syntax & Kyverno validation
+│   ├── payment-service-ci.yml            # Python test, lint, docker build & Trivy scan
+│   └── terraform-ci-cd.yml               # Terraform validation
+├── apps/
+│   └── payment-service/                  # Reference microservice
+│       ├── Dockerfile                    # Multi-stage non-root build
+│       ├── requirements.txt              # Dependencies
+│       ├── src/                          # FastAPI payment service
+│       └── tests/                        # Unit tests
 ├── gitops/
 │   ├── apps/
-│   │   └── payment-service/              # Hardened Zero-Trust reference microservice
-│   │       ├── deployment.yaml
-│   │       └── secret-provider-class.yaml
+│   │   └── payment-service/              # K8s Deployment, Service, HPA, NetPol
 │   ├── bootstrap/
-│   │   └── argocd-root-app.yaml          # Root ArgoCD App-of-Apps manifest
+│   │   └── argocd-root-app.yaml          # ArgoCD root manifest
 │   ├── network-policies/
-│   │   ├── cilium-default-deny-all.yaml  # Global default-deny network policy
-│   │   └── cilium-l7-http-ingress.yaml   # Layer 7 micro-segmentation
+│   │   ├── cilium-default-deny-all.yaml  # Global default-deny
+│   │   └── cilium-l7-http-ingress.yaml   # L7 micro-segmentation
 │   └── policies/
-│       ├── kyverno-disallow-root.yaml    # Admission control: root container denial
-│       └── kyverno-read-only-rootfs.yaml
-├── terraform/
-│   ├── aks_cluster.tf                    # Production AKS with Cilium & Workload Identity
-│   ├── workload_identity.tf              # Azure Entra ID federated credential
-│   ├── variables.tf
-│   └── outputs.tf
-└── README.md
+│       └── kyverno-disallow-root.yaml    # Admission control
+└── terraform/                            # Modular infrastructure
+    ├── main.tf
+    ├── variables.tf
+    ├── outputs.tf
+    └── modules/
+        ├── aks_cluster/
+        └── workload_identity/
 ```
 
----
+## Running the Payment Service Locally
 
-## 🚀 Deployment Guide
+### 1. Run with Python
 
-### Step 1: Provision Zero-Trust AKS Infrastructure
+```bash
+cd apps/payment-service
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn src.app:app --reload --port 8080
+```
+
+Endpoints available:
+- `GET /healthz` - Liveness probe
+- `GET /ready` - Readiness probe
+- `POST /v1/payments` - Process payment (supports `Idempotency-Key` header)
+- `GET /v1/payments/{transaction_id}` - Get transaction status
+- `GET /docs` - Swagger UI
+
+### 2. Run with Docker
+
+```bash
+docker build -t payment-service:v1.0.0 apps/payment-service
+docker run -p 8080:8080 payment-service:v1.0.0
+```
+
+## Deploying Infrastructure
 
 ```bash
 cd terraform
 terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
+terraform plan
+terraform apply
 ```
 
-### Step 2: Bootstrap ArgoCD & Apply Security Baseline
+## Deploying GitOps Workloads
 
 ```bash
 az aks get-credentials --resource-group rg-aks-zerotrust-prod --name aks-zerotrust-prod-01
 kubectl apply -f gitops/bootstrap/argocd-root-app.yaml
 ```
 
----
-
-## 👤 Architect & Author
+## Author
 
 **Gunjan Kumar Gaurav**  
-*Senior Cloud Architect & DevSecOps Consultant*  
-[LinkedIn](https://www.linkedin.com/in/gunjan-gaurav) • [GitHub](https://github.com/gunjankumargaurav7350) • Email: `gunjankumargaurav7@gmail.com`
+*Senior Cloud & DevSecOps Consultant*  
+[LinkedIn](https://www.linkedin.com/in/gunjan-gaurav) • [GitHub](https://github.com/gunjankumargaurav7350)

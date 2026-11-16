@@ -15,3 +15,4 @@ resource "azurerm_federated_identity_credential" "credential" {
   parent_id           = azurerm_user_assigned_identity.identity[each.key].id
   subject             = each.value.subject
 }
+

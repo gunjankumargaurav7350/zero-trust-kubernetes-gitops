@@ -50,3 +50,4 @@ module "workload_identity" {
   oidc_issuer_url     = module.aks_clusters[var.primary_cluster_key].oidc_issuer_url
   identities          = var.workload_identities
 }
+
